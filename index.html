@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工数登録アプリ（ICカード版） - PoC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f1f5f9; }
+.app-shell { max-width: 580px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; background: #fff; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }
+.screen { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.header { background: #1e293b; color: #fff; padding: 16px; display: flex; align-items: center; justify-content: space-between; }
+.header-sub { font-size: 12px; color: #94a3b8; }
+.header-title { font-size: 20px; font-weight: 700; }
+.header-clock { font-size: 28px; font-weight: 700; font-family: 'SF Mono', 'Consolas', monospace; }
+.header-badge { background: #3b82f6; color: #fff; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.bottom-nav { display: flex; border-top: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; }
+.nav-btn { flex: 1; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; border: none; background: none; cursor: pointer; color: #94a3b8; transition: color 0.15s; }
+.nav-btn.active { color: #1e293b; font-weight: 700; }
+.nav-btn .icon { font-size: 20px; }
+/* Feedback */
+.feedback { text-align: center; padding: 32px; border-radius: 16px; margin: 24px; }
+.feedback.start { background: #f0fdf4; border: 2px solid #4ade80; }
+.feedback.end { background: #eff6ff; border: 2px solid #60a5fa; }
+.feedback .big-icon { font-size: 48px; margin-bottom: 8px; }
+.feedback .name { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+.feedback .action { font-size: 20px; font-weight: 700; }
+.feedback .action.start-text { color: #15803d; }
+.feedback .action.end-text { color: #1d4ed8; }
+.feedback .duration { font-size: 18px; color: #2563eb; margin-top: 8px; }
+.feedback .process-name { font-size: 16px; color: #475569; margin-top: 4px; }
+/* Idle & Waiting */
+.idle { text-align: center; color: #94a3b8; padding: 48px 24px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.idle .msg { font-size: 20px; margin-top: 16px; }
+.idle .sub-msg { font-size: 14px; margin-top: 8px; color: #cbd5e1; }
+/* Process selection */
+.process-select { padding: 16px 24px; flex: 1; display: flex; flex-direction: column; }
+.process-select .greeting { text-align: center; margin-bottom: 20px; }
+.process-select .greeting .name { font-size: 22px; font-weight: 700; color: #1e293b; }
+.process-select .greeting .sub { font-size: 14px; color: #64748b; margin-top: 4px; }
+.process-select .label { font-size: 13px; color: #64748b; margin-bottom: 12px; font-weight: 600; }
+.process-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.process-btn { padding: 18px 12px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-align: center; }
+.process-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+.process-btn:active { background: #e2e8f0; transform: scale(0.97); }
+.process-btn.active-process { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+/* Action buttons */
+.action-area { display: flex; gap: 12px; margin-top: 16px; padding: 0 24px 24px; }
+.action-btn { flex: 1; padding: 18px; border-radius: 12px; border: none; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+.action-btn.start-btn { background: #16a34a; color: #fff; }
+.action-btn.start-btn:hover { background: #15803d; }
+.action-btn.end-btn { background: #2563eb; color: #fff; }
+.action-btn.end-btn:hover { background: #1d4ed8; }
+.cancel-link { text-align: center; padding: 8px; }
+.cancel-link button { background: none; border: none; color: #94a3b8; font-size: 13px; cursor: pointer; }
+.cancel-link button:hover { color: #64748b; }
+/* Sim buttons */
+.sim-area { background: #fefce8; border-top: 2px dashed #fde68a; padding: 12px; }
+.sim-label { font-size: 11px; color: #a16207; text-align: center; margin-bottom: 8px; font-weight: 600; }
+.sim-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.sim-btn { padding: 8px 14px; background: #fff; border: 1px solid #fde68a; border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.1s; }
+.sim-btn:hover { background: #fefce8; }
+.sim-btn:active { background: #fef9c3; transform: scale(0.97); }
+/* Recent stamps */
+.recent { background: #fff; border-top: 1px solid #e2e8f0; padding: 12px; max-height: 180px; overflow-y: auto; }
+.recent-label { font-size: 11px; color: #94a3b8; margin-bottom: 8px; }
+.recent-empty { font-size: 13px; color: #cbd5e1; text-align: center; padding: 8px; }
+.recent-item { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: #f8fafc; margin-bottom: 4px; }
+.badge { font-family: monospace; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.badge.start { background: #dcfce7; color: #15803d; }
+.badge.end { background: #dbeafe; color: #1d4ed8; }
+.recent-item .name { font-weight: 600; min-width: 70px; }
+.recent-item .wp { color: #64748b; font-size: 12px; }
+.recent-item .time { margin-left: auto; font-family: monospace; color: #64748b; }
+/* Forms and tables */
+.section-content { flex: 1; overflow-y: auto; padding: 16px; }
+.form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+.form-group { display: flex; flex-direction: column; }
+.form-label { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+select, input[type="date"], input[type="time"] { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; font-size: 13px; background: #fff; }
+table { width: 100%; font-size: 13px; border-collapse: collapse; }
+thead tr { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+th { text-align: left; padding: 8px; font-weight: 600; color: #475569; }
+td { padding: 8px; border-bottom: 1px solid #f1f5f9; }
+tr:hover { background: #f8fafc; }
+.mono { font-family: monospace; }
+.status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.status.ok { background: #dcfce7; color: #15803d; }
+.status.no_end { background: #fef9c3; color: #854d0e; }
+.status.modified { background: #dbeafe; color: #1d4ed8; }
+.status.confirmed { background: #f1f5f9; color: #64748b; }
+.btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.15s; }
+.btn-primary { background: #1e293b; color: #fff; }
+.btn-green { background: #16a34a; color: #fff; }
+.btn-green:disabled { background: #cbd5e1; cursor: not-allowed; }
+.btn-link { background: none; border: none; color: #2563eb; font-size: 12px; cursor: pointer; padding: 0; }
+.btn-link:hover { text-decoration: underline; }
+.alert-box { background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+.alert-title { font-size: 13px; font-weight: 600; color: #854d0e; margin-bottom: 4px; }
+.alert-item { font-size: 12px; color: #a16207; margin-bottom: 2px; }
+.edit-modes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.edit-mode-btn { padding: 6px 14px; border-radius: 8px; font-size: 13px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; transition: all 0.15s; }
+.edit-mode-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+.info-box { background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+.info-box .label { color: #94a3b8; font-size: 12px; }
+.info-box .value { font-weight: 600; }
+.danger-box { background: #fef2f2; padding: 12px; border-radius: 8px; font-size: 13px; color: #b91c1c; margin-bottom: 16px; }
+.success-box { background: #f0fdf4; padding: 12px; border-radius: 8px; font-size: 13px; color: #15803d; text-align: center; font-weight: 600; margin-bottom: 16px; }
+.full-btn { width: 100%; padding: 14px; border-radius: 8px; border: none; background: #1e293b; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.full-btn:hover { background: #334155; }
+.settings-section { margin-bottom: 24px; }
+.settings-section h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 12px; }
+.sys-info { background: #f8fafc; border-radius: 8px; padding: 12px; font-size: 12px; color: #94a3b8; }
+.sys-info .si-title { font-weight: 600; margin-bottom: 4px; }
+.role-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+.role-badge.manager { background: #f3e8ff; color: #7c3aed; }
+.role-badge.worker { background: #f1f5f9; color: #64748b; }
+.back-btn { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 18px; padding: 4px 8px; }
+.back-btn:hover { color: #fff; }
+/* Factory selector */
+.factory-selector { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.factory-selector .fs-label { font-size: 11px; color: #64748b; font-weight: 600; white-space: nowrap; }
+.factory-selector select { flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; background: #fff; color: #1e293b; }
+.factory-badge { font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+/* Process grid scrollable */
+.process-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+.process-grid::-webkit-scrollbar { width: 4px; }
+.process-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
+
+// ==================== Mock Data ====================
+const MOCK_EMPLOYEES = [
+  { employee_id: "emp_001", employee_name: "田中 太郎", idm: "01FE010B0C2D3E4F", factory_id: "f_001", role: "worker" },
+  { employee_id: "emp_002", employee_name: "山田 花子", idm: "01FE020B0C2D3E5F", factory_id: "f_001", role: "worker" },
+  { employee_id: "emp_003", employee_name: "佐藤 一郎", idm: "01FE030B0C2D3E6F", factory_id: "f_001", role: "worker" },
+  { employee_id: "emp_004", employee_name: "鈴木 美咲", idm: "01FE040B0C2D3E7F", factory_id: "f_001", role: "worker" },
+  { employee_id: "emp_005", employee_name: "中島 健介", idm: "01FE050B0C2D3E8F", factory_id: "f_001", role: "manager" },
+];
+
+const FACTORIES = [
+  { factory_id: "f_001", factory_name: "望岳台工場", tablet_id: "tablet_001" },
+  { factory_id: "f_002", factory_name: "白衣工場", tablet_id: "tablet_002" },
+  { factory_id: "f_003", factory_name: "病衣・タオル工場", tablet_id: "tablet_003" },
+  { factory_id: "f_004", factory_name: "術衣・ベビー肌着工場", tablet_id: "tablet_004" },
+];
+
+const MOCK_PROCESSES = [
+  // 望岳台工場
+  { process_id: "pr_101", process_name: "入荷仕分", factory_id: "f_001", display_order: 1 },
+  { process_id: "pr_102", process_name: "洗濯1号機", factory_id: "f_001", display_order: 2 },
+  { process_id: "pr_103", process_name: "洗濯2号機", factory_id: "f_001", display_order: 3 },
+  { process_id: "pr_104", process_name: "洗濯後仕分", factory_id: "f_001", display_order: 4 },
+  { process_id: "pr_105", process_name: "仕上1号ライン", factory_id: "f_001", display_order: 5 },
+  { process_id: "pr_106", process_name: "仕上2号ライン", factory_id: "f_001", display_order: 6 },
+  { process_id: "pr_107", process_name: "検品出荷", factory_id: "f_001", display_order: 7 },
+  { process_id: "pr_108", process_name: "間接作業", factory_id: "f_001", display_order: 8 },
+  // 白衣工場
+  { process_id: "pr_201", process_name: "入荷・受取り・仕分け", factory_id: "f_002", display_order: 1 },
+  { process_id: "pr_202", process_name: "第一入荷場 検品仕分け", factory_id: "f_002", display_order: 2 },
+  { process_id: "pr_203", process_name: "第二入荷場 検品仕分け", factory_id: "f_002", display_order: 3 },
+  { process_id: "pr_204", process_name: "MOX-60", factory_id: "f_002", display_order: 4 },
+  { process_id: "pr_205", process_name: "WE-50-VS水洗機", factory_id: "f_002", display_order: 5 },
+  { process_id: "pr_206", process_name: "FLT100BD水洗機", factory_id: "f_002", display_order: 6 },
+  { process_id: "pr_207", process_name: "WER-1030水洗機", factory_id: "f_002", display_order: 7 },
+  { process_id: "pr_208", process_name: "プレス・ポリ仕分け", factory_id: "f_002", display_order: 8 },
+  { process_id: "pr_209", process_name: "トンネル投入", factory_id: "f_002", display_order: 9 },
+  { process_id: "pr_210", process_name: "大綿プレス仕上げ", factory_id: "f_002", display_order: 10 },
+  { process_id: "pr_211", process_name: "回診プレス仕上げ", factory_id: "f_002", display_order: 11 },
+  { process_id: "pr_212", process_name: "たたみG", factory_id: "f_002", display_order: 12 },
+  { process_id: "pr_213", process_name: "アイロン", factory_id: "f_002", display_order: 13 },
+  { process_id: "pr_214", process_name: "補修作業", factory_id: "f_002", display_order: 14 },
+  { process_id: "pr_215", process_name: "立体チップ読み取り", factory_id: "f_002", display_order: 15 },
+  { process_id: "pr_216", process_name: "ユニフォームフォルダー仕上", factory_id: "f_002", display_order: 16 },
+  { process_id: "pr_217", process_name: "立体納品 出荷検品", factory_id: "f_002", display_order: 17 },
+  { process_id: "pr_218", process_name: "たたみ納品 出荷検品", factory_id: "f_002", display_order: 18 },
+  { process_id: "pr_219", process_name: "梱包工程", factory_id: "f_002", display_order: 19 },
+  { process_id: "pr_220", process_name: "ハンガー投入 効率", factory_id: "f_002", display_order: 20 },
+  { process_id: "pr_221", process_name: "管理", factory_id: "f_002", display_order: 21 },
+  { process_id: "pr_222", process_name: "生産外", factory_id: "f_002", display_order: 22 },
+  // 病衣・タオル工場
+  { process_id: "pr_301", process_name: "入荷仕分け・受取", factory_id: "f_003", display_order: 1 },
+  { process_id: "pr_302", process_name: "連続式洗濯機 L-CBW-60", factory_id: "f_003", display_order: 2 },
+  { process_id: "pr_303", process_name: "連続式洗濯機 CBW-50-5", factory_id: "f_003", display_order: 3 },
+  { process_id: "pr_304", process_name: "バッチ式洗濯機 50K", factory_id: "f_003", display_order: 4 },
+  { process_id: "pr_305", process_name: "50kg・60kg乾燥機", factory_id: "f_003", display_order: 5 },
+  { process_id: "pr_306", process_name: "仕上 1号ライン", factory_id: "f_003", display_order: 6 },
+  { process_id: "pr_307", process_name: "仕上 2号ライン", factory_id: "f_003", display_order: 7 },
+  { process_id: "pr_308", process_name: "ズボンタタミ", factory_id: "f_003", display_order: 8 },
+  { process_id: "pr_309", process_name: "トンネル", factory_id: "f_003", display_order: 9 },
+  { process_id: "pr_310", process_name: "手仕上げ", factory_id: "f_003", display_order: 10 },
+  { process_id: "pr_311", process_name: "防水シーツ", factory_id: "f_003", display_order: 11 },
+  { process_id: "pr_312", process_name: "タオル", factory_id: "f_003", display_order: 12 },
+  { process_id: "pr_313", process_name: "おしぼり巻き", factory_id: "f_003", display_order: 13 },
+  { process_id: "pr_314", process_name: "病衣出荷検品", factory_id: "f_003", display_order: 14 },
+  { process_id: "pr_315", process_name: "ズボン出荷結束・仕分け", factory_id: "f_003", display_order: 15 },
+  { process_id: "pr_316", process_name: "トンネル作業・入荷・出荷", factory_id: "f_003", display_order: 16 },
+  { process_id: "pr_317", process_name: "防水出荷検品", factory_id: "f_003", display_order: 17 },
+  { process_id: "pr_318", process_name: "タオル受取・検品", factory_id: "f_003", display_order: 18 },
+  { process_id: "pr_319", process_name: "運搬", factory_id: "f_003", display_order: 19 },
+  { process_id: "pr_320", process_name: "管理者", factory_id: "f_003", display_order: 20 },
+  { process_id: "pr_321", process_name: "生産外", factory_id: "f_003", display_order: 21 },
+  // 術衣・ベビー肌着工場
+  { process_id: "pr_401", process_name: "バッチ式洗濯機 50k", factory_id: "f_004", display_order: 1 },
+  { process_id: "pr_402", process_name: "仕分け", factory_id: "f_004", display_order: 2 },
+  { process_id: "pr_403", process_name: "手ダタミ", factory_id: "f_004", display_order: 3 },
+  { process_id: "pr_404", process_name: "コンベル仕上げ", factory_id: "f_004", display_order: 4 },
+  { process_id: "pr_405", process_name: "出荷検品", factory_id: "f_004", display_order: 5 },
+  { process_id: "pr_406", process_name: "管理者", factory_id: "f_004", display_order: 6 },
+  { process_id: "pr_407", process_name: "生産外", factory_id: "f_004", display_order: 7 },
+];
+
+const today = new Date().toISOString().split("T")[0];
+
+const generateMockStamps = () => {
+  const stamps = [];
+  const pairs = [
+    { emp: "emp_001", pr: "pr_101", start: "08:02", end: "10:55" },
+    { emp: "emp_001", pr: "pr_105", start: "11:10", end: null },
+    { emp: "emp_002", pr: "pr_102", start: "08:15", end: "12:00" },
+    { emp: "emp_002", pr: "pr_106", start: "13:05", end: "17:02" },
+    { emp: "emp_003", pr: "pr_101", start: "08:00", end: "11:45" },
+    { emp: "emp_003", pr: "pr_107", start: "13:00", end: "16:30" },
+    { emp: "emp_004", pr: "pr_103", start: "09:10", end: "12:20", modified: true, modify_reason: "時刻誤り" },
+  ];
+  pairs.forEach((p, i) => {
+    const emp = MOCK_EMPLOYEES.find(e => e.employee_id === p.emp);
+    stamps.push({
+      stamp_id: `stm_${String(i * 2 + 1).padStart(3, "0")}`,
+      idm: emp.idm, employee_id: p.emp, employee_name: emp.employee_name,
+      process_id: p.pr, stamp_type: "start", stamp_time: `${today}T${p.start}:00`,
+      is_modified: p.modified || false, modify_reason: p.modify_reason || "",
+      modified_by: "", modified_at: "", confirmed: false, confirmed_by: "", confirmed_at: "",
+    });
+    if (p.end) {
+      stamps.push({
+        stamp_id: `stm_${String(i * 2 + 2).padStart(3, "0")}`,
+        idm: emp.idm, employee_id: p.emp, employee_name: emp.employee_name,
+        process_id: p.pr, stamp_type: "end", stamp_time: `${today}T${p.end}:00`,
+        is_modified: false, modify_reason: "", modified_by: "", modified_at: "",
+        confirmed: false, confirmed_by: "", confirmed_at: "",
+      });
+    }
+  });
+  return stamps;
+};
+
+// ==================== Utility ====================
+const fmt = (iso) => { if (!iso) return "\u2014"; const d = new Date(iso); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const dur = (s, e) => { if (!s||!e) return "\u2014"; const d = new Date(e)-new Date(s); return `${Math.floor(d/3600000)}h${String(Math.floor((d%3600000)/60000)).padStart(2,"0")}m`; };
+const prName = (id) => MOCK_PROCESSES.find(p => p.process_id === id)?.process_name || id;
+
+// ==================== Clock ====================
+const Clock = () => {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  return React.createElement("span", null, `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`);
+};
+
+const StatusBadge = ({status}) => {
+  const l = { ok:"OK", no_end:"終了未打刻", modified:"修正済み", confirmed:"確認済み" };
+  const ic = { ok:"\u2713", no_end:"\u26A0", modified:"\uD83D\uDD27", confirmed:"\u2705" };
+  return React.createElement("span", {className:`status ${status}`}, `${ic[status]||""} ${l[status]||""}`);
+};
+
+// ==================== Stamp Screen (IC Card) ====================
+const StampScreen = ({stamps, setStamps, employees, processes, currentFactory, setCurrentFactory}) => {
+  const factoryProcesses = useMemo(() => processes.filter(p => p.factory_id === currentFactory.factory_id), [processes, currentFactory]);
+  const [phase, setPhase] = useState("idle"); // idle, select_process, feedback
+  const [currentEmp, setCurrentEmp] = useState(null);
+  const [selectedProcess, setSelectedProcess] = useState(null);
+  const [fb, setFb] = useState(null);
+  const [timer, setTimer] = useState(null);
+
+  const recent = useMemo(() =>
+    [...stamps].sort((a,b) => new Date(b.stamp_time) - new Date(a.stamp_time)).slice(0,8),
+    [stamps]);
+
+  // Find if this employee has an open session for a given process
+  const getOpenSession = useCallback((empId, prId) => {
+    const es = stamps.filter(s => s.employee_id === empId && s.process_id === prId);
+    const ls = es.filter(s => s.stamp_type === "start").sort((a,b) => new Date(b.stamp_time)-new Date(a.stamp_time))[0];
+    if (!ls) return null;
+    const hasEnd = es.some(s => s.stamp_type === "end" && new Date(s.stamp_time) > new Date(ls.stamp_time));
+    return hasEnd ? null : ls;
+  }, [stamps]);
+
+  // Find all open sessions for an employee
+  const getOpenSessions = useCallback((empId) => {
+    return factoryProcesses.filter(pr => getOpenSession(empId, pr.process_id)).map(pr => ({
+      process: pr,
+      startStamp: getOpenSession(empId, pr.process_id)
+    }));
+  }, [factoryProcesses, getOpenSession]);
+
+  const touch = useCallback((emp) => {
+    setCurrentEmp(emp);
+    setSelectedProcess(null);
+    setPhase("select_process");
+    if (timer) clearTimeout(timer);
+  }, [timer]);
+
+  const doStamp = useCallback((processId, type) => {
+    const now = new Date();
+    const openSession = getOpenSession(currentEmp.employee_id, processId);
+    const st = type || (openSession ? "end" : "start");
+    const d = st === "end" && openSession ? dur(openSession.stamp_time, now.toISOString()) : null;
+
+    setStamps(prev => [...prev, {
+      stamp_id: `stm_${Date.now()}`, idm: currentEmp.idm, employee_id: currentEmp.employee_id,
+      employee_name: currentEmp.employee_name, process_id: processId,
+      stamp_type: st, stamp_time: now.toISOString(), is_modified: false,
+      modify_reason: "", modified_by: "", modified_at: "",
+      confirmed: false, confirmed_by: "", confirmed_at: "",
+    }]);
+
+    setFb({type: st, name: currentEmp.employee_name, time: now, duration: d, processName: prName(processId)});
+    setPhase("feedback");
+    const t = setTimeout(() => { setPhase("idle"); setFb(null); setCurrentEmp(null); }, 3500);
+    setTimer(t);
+  }, [currentEmp, getOpenSession, setStamps, timer]);
+
+  const cancel = () => { setPhase("idle"); setCurrentEmp(null); setSelectedProcess(null); };
+
+  // Render
+  const renderIdle = () => React.createElement("div", {className:"idle"},
+    React.createElement("svg", {width:72,height:72,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:1.5},
+      React.createElement("rect", {x:2,y:5,width:20,height:14,rx:2}),
+      React.createElement("line", {x1:2,y1:10,x2:22,y2:10}),
+      React.createElement("circle", {cx:12,cy:14,r:2})),
+    React.createElement("div", {className:"msg"}, "ICカード（リストバンド）をタッチ"),
+    React.createElement("div", {className:"sub-msg"}, "リーダーにリストバンドをかざしてください"));
+
+  const renderProcessSelect = () => {
+    const openSessions = getOpenSessions(currentEmp.employee_id);
+    return React.createElement("div", {className:"process-select"},
+      React.createElement("div", {className:"greeting"},
+        React.createElement("div", {className:"name"}, `${currentEmp.employee_name} さん`),
+        React.createElement("div", {className:"sub"}, openSessions.length > 0
+          ? `現在「${openSessions.map(s=>s.process.process_name).join('・')}」で作業中`
+          : "担当工程を選択してください")),
+      openSessions.length > 0 && React.createElement("div", {style:{marginBottom: 16}},
+        React.createElement("div", {className:"label"}, "作業中の工程を終了する"),
+        React.createElement("div", {className:"process-grid"},
+          openSessions.map(s => React.createElement("button", {
+            key: s.process.process_id, className: "process-btn active-process",
+            onClick: () => doStamp(s.process.process_id, "end")
+          }, `${s.process.process_name}\n（終了）`)))),
+      React.createElement("div", {className:"label"}, openSessions.length > 0 ? "新しい工程を開始する" : "工程を選択して開始"),
+      React.createElement("div", {className:"process-grid"},
+        factoryProcesses.filter(pr => !openSessions.some(s => s.process.process_id === pr.process_id))
+          .map(pr => React.createElement("button", {
+            key: pr.process_id, className: "process-btn",
+            onClick: () => doStamp(pr.process_id, "start")
+          }, pr.process_name))),
+      React.createElement("div", {className:"cancel-link"},
+        React.createElement("button", {onClick: cancel}, "キャンセル")));
+  };
+
+  const renderFeedback = () => fb && React.createElement("div", {style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24}},
+    React.createElement("div", {className:`feedback ${fb.type}`},
+      React.createElement("div", {className:"big-icon"}, fb.type === "start" ? "\u25B6" : "\u25A0"),
+      React.createElement("div", {className:"name"}, fb.name),
+      React.createElement("div", {className:"process-name"}, fb.processName),
+      React.createElement("div", {className:`action ${fb.type}-text`}, `${fb.type === "start" ? "作業開始" : "作業終了"} ${fmt(fb.time.toISOString())}`),
+      fb.duration && React.createElement("div", {className:"duration"}, `作業時間: ${fb.duration}`)));
+
+  return React.createElement("div", {className:"screen"},
+    React.createElement("div", {className:"header"},
+      React.createElement("div", null,
+        React.createElement("div", {className:"header-sub"}, "ICカード版"),
+        React.createElement("div", {className:"header-title"}, "工数登録")),
+      React.createElement("div", null,
+        React.createElement("div", {className:"header-clock"}, React.createElement(Clock)),
+        React.createElement("div", {className:"header-badge"}, "ICカード"))),
+    React.createElement("div", {className:"factory-selector"},
+      React.createElement("span", {className:"fs-label"}, "\uD83C\uDFED 工場"),
+      React.createElement("select", {value: currentFactory.factory_id, onChange: e => setCurrentFactory(FACTORIES.find(f=>f.factory_id===e.target.value))},
+        FACTORIES.map(f => React.createElement("option", {key:f.factory_id, value:f.factory_id}, f.factory_name))),
+      React.createElement("span", {className:"factory-badge"}, `${factoryProcesses.length}工程`)),
+    phase === "idle" ? renderIdle() : phase === "select_process" ? renderProcessSelect() : renderFeedback(),
+    phase === "idle" && React.createElement("div", {className:"sim-area"},
+      React.createElement("div", {className:"sim-label"}, "PoC: ICカード（リストバンド）タッチをシミュレート"),
+      React.createElement("div", {className:"sim-buttons"},
+        employees.filter(e=>e.role==="worker").map(emp =>
+          React.createElement("button", {key:emp.employee_id,className:"sim-btn",onClick:()=>touch(emp)}, emp.employee_name)))),
+    React.createElement("div", {className:"recent"},
+      React.createElement("div", {className:"recent-label"}, "直近の打刻（全工程）"),
+      recent.length === 0
+        ? React.createElement("div", {className:"recent-empty"}, "打刻履歴なし")
+        : recent.map(s => React.createElement("div", {key:s.stamp_id,className:"recent-item"},
+          React.createElement("span", {className:`badge ${s.stamp_type}`}, s.stamp_type==="start"?"開始":"終了"),
+          React.createElement("span", {className:"name"}, s.employee_name),
+          React.createElement("span", {className:"wp"}, prName(s.process_id)),
+          React.createElement("span", {className:"time"}, fmt(s.stamp_time)))))
+  );
+};
+
+// ==================== History Screen ====================
+const HistoryScreen = ({stamps, employees, processes, onEdit}) => {
+  const [selEmp, setSelEmp] = useState("");
+  const [selDate, setSelDate] = useState(today);
+  const es = useMemo(() => {
+    if (!selEmp) return [];
+    return stamps.filter(s => s.employee_id===selEmp && s.stamp_time.startsWith(selDate)).sort((a,b)=>new Date(a.stamp_time)-new Date(b.stamp_time));
+  }, [stamps, selEmp, selDate]);
+  const pairs = useMemo(() => {
+    const r = []; const bw = {};
+    es.forEach(s => { if (!bw[s.process_id]) bw[s.process_id]=[]; bw[s.process_id].push(s); });
+    Object.entries(bw).forEach(([pid, ws]) => {
+      const st = ws.filter(s=>s.stamp_type==="start"); const en = ws.filter(s=>s.stamp_type==="end");
+      st.forEach((s,i) => r.push({start:s,end:en[i]||null,process_id:pid}));
+    });
+    r.sort((a,b)=>new Date(a.start.stamp_time)-new Date(b.start.stamp_time));
+    return r;
+  }, [es]);
+
+  return React.createElement("div", {className:"screen"},
+    React.createElement("div", {className:"header"}, React.createElement("div", {className:"header-title"}, "打刻履歴")),
+    React.createElement("div", {className:"section-content"},
+      React.createElement("div", {className:"form-row"},
+        React.createElement("div", {className:"form-group"},
+          React.createElement("span", {className:"form-label"}, "従業員"),
+          React.createElement("select", {value:selEmp,onChange:e=>setSelEmp(e.target.value)},
+            React.createElement("option", {value:""}, "選択してください"),
+            employees.map(e=>React.createElement("option",{key:e.employee_id,value:e.employee_id},e.employee_name)))),
+        React.createElement("div", {className:"form-group"},
+          React.createElement("span", {className:"form-label"}, "日付"),
+          React.createElement("input", {type:"date",value:selDate,onChange:e=>setSelDate(e.target.value)}))),
+      !selEmp ? React.createElement("div", {style:{textAlign:"center",color:"#94a3b8",padding:48}}, "従業員を選択してください")
+      : pairs.length===0 ? React.createElement("div", {style:{textAlign:"center",color:"#94a3b8",padding:48}}, "打刻データがありません")
+      : React.createElement("table", null,
+        React.createElement("thead", null, React.createElement("tr", null,
+          ["工程","開始","終了","時間","状態",""].map(h=>React.createElement("th",{key:h},h)))),
+        React.createElement("tbody", null, pairs.map((p,i) => {
+          const st = !p.end?"no_end":p.start.is_modified||(p.end&&p.end.is_modified)?"modified":p.start.confirmed?"confirmed":"ok";
+          return React.createElement("tr", {key:i},
+            React.createElement("td", {style:{fontWeight:600}}, prName(p.process_id)),
+            React.createElement("td", {className:"mono"}, fmt(p.start.stamp_time)),
+            React.createElement("td", {className:"mono"}, p.end?fmt(p.end.stamp_time):"\u2014"),
+            React.createElement("td", {className:"mono"}, p.end?dur(p.start.stamp_time,p.end.stamp_time):"\u2014"),
+            React.createElement("td", null, React.createElement(StatusBadge, {status:st})),
+            React.createElement("td", null, React.createElement("button", {className:"btn-link",onClick:()=>onEdit(p.start)}, "修正")));
+        }))))
+  );
+};
+
+// ==================== Edit Screen ====================
+const EditScreen = ({stamp, stamps, setStamps, onBack, processes}) => {
+  const [mode, setMode] = useState("time");
+  const [editTime, setEditTime] = useState(stamp?fmt(stamp.stamp_time):"");
+  const [reason, setReason] = useState("打刻忘れ");
+  const [addType, setAddType] = useState("end");
+  const [addTime, setAddTime] = useState("");
+  const [addPr, setAddPr] = useState(stamp?.process_id||"");
+  const [chgPr, setChgPr] = useState(stamp?.process_id||"");
+  const [saved, setSaved] = useState(false);
+  if (!stamp) return React.createElement("div",{style:{padding:32,textAlign:"center",color:"#94a3b8"}},"対象の打刻を選択してください");
+
+  const save = () => {
+    if (mode==="time") setStamps(p=>p.map(s=>s.stamp_id===stamp.stamp_id?{...s,stamp_time:`${today}T${editTime}:00`,is_modified:true,modify_reason:reason,modified_by:stamp.employee_id,modified_at:new Date().toISOString()}:s));
+    else if (mode==="add") setStamps(p=>[...p,{stamp_id:`stm_mod_${Date.now()}`,idm:stamp.idm,employee_id:stamp.employee_id,employee_name:stamp.employee_name,process_id:addPr,stamp_type:addType,stamp_time:`${today}T${addTime}:00`,is_modified:true,modify_reason:reason,modified_by:stamp.employee_id,modified_at:new Date().toISOString(),confirmed:false,confirmed_by:"",confirmed_at:""}]);
+    else if (mode==="delete") setStamps(p=>p.filter(s=>s.stamp_id!==stamp.stamp_id));
+    else if (mode==="process") setStamps(p=>p.map(s=>s.stamp_id===stamp.stamp_id?{...s,process_id:chgPr,is_modified:true,modify_reason:reason,modified_by:stamp.employee_id,modified_at:new Date().toISOString()}:s));
+    setSaved(true); setTimeout(()=>{setSaved(false);onBack();},1500);
+  };
+
+  const modes = [{v:"time",l:"時刻変更"},{v:"add",l:"打刻追加"},{v:"delete",l:"打刻削除"},{v:"process",l:"工程変更"}];
+  const reasons = ["打刻忘れ","時刻誤り","工程誤り","その他"];
+
+  return React.createElement("div",{className:"screen"},
+    React.createElement("div",{className:"header"},
+      React.createElement("button",{className:"back-btn",onClick:onBack},"\u2190"),
+      React.createElement("div",{className:"header-title"},"打刻修正")),
+    React.createElement("div",{className:"section-content"},
+      saved && React.createElement("div",{className:"success-box"},"保存しました"),
+      React.createElement("div",{className:"info-box"},
+        React.createElement("div",{className:"label"},"対象"),
+        React.createElement("div",{className:"value"},`${stamp.employee_name} / ${prName(stamp.process_id)} / ${stamp.stamp_type==="start"?"開始":"終了"} ${fmt(stamp.stamp_time)}`)),
+      React.createElement("div",null,
+        React.createElement("span",{className:"form-label"},"修正種別"),
+        React.createElement("div",{className:"edit-modes"},
+          modes.map(m=>React.createElement("button",{key:m.v,className:`edit-mode-btn ${mode===m.v?"active":""}`,onClick:()=>setMode(m.v)},m.l)))),
+      mode==="time"&&React.createElement("div",{className:"form-group",style:{marginBottom:16}},
+        React.createElement("span",{className:"form-label"},"修正後の時刻"),
+        React.createElement("input",{type:"time",value:editTime,onChange:e=>setEditTime(e.target.value)})),
+      mode==="add"&&React.createElement("div",{style:{marginBottom:16}},
+        React.createElement("div",{className:"form-row"},
+          React.createElement("div",{className:"form-group"},React.createElement("span",{className:"form-label"},"種別"),React.createElement("select",{value:addType,onChange:e=>setAddType(e.target.value)},React.createElement("option",{value:"start"},"開始"),React.createElement("option",{value:"end"},"終了"))),
+          React.createElement("div",{className:"form-group"},React.createElement("span",{className:"form-label"},"時刻"),React.createElement("input",{type:"time",value:addTime,onChange:e=>setAddTime(e.target.value)}))),
+        React.createElement("div",{className:"form-group"},React.createElement("span",{className:"form-label"},"工程"),
+          React.createElement("select",{value:addPr,onChange:e=>setAddPr(e.target.value)},processes.map(p=>React.createElement("option",{key:p.process_id,value:p.process_id},p.process_name))))),
+      mode==="delete"&&React.createElement("div",{className:"danger-box"},`この打刻を削除します（${stamp.stamp_type==="start"?"開始":"終了"} ${fmt(stamp.stamp_time)}）`),
+      mode==="process"&&React.createElement("div",{className:"form-group",style:{marginBottom:16}},
+        React.createElement("span",{className:"form-label"},"変更先の工程"),
+        React.createElement("select",{value:chgPr,onChange:e=>setChgPr(e.target.value)},processes.map(p=>React.createElement("option",{key:p.process_id,value:p.process_id},p.process_name)))),
+      React.createElement("div",{className:"form-group",style:{marginBottom:16}},
+        React.createElement("span",{className:"form-label"},"修正理由"),
+        React.createElement("select",{value:reason,onChange:e=>setReason(e.target.value),style:{width:"100%"}},reasons.map(r=>React.createElement("option",{key:r,value:r},r)))),
+      React.createElement("button",{className:"full-btn",onClick:save},mode==="delete"?"削除する":"保存する"))
+  );
+};
+
+// ==================== Manager Screen ====================
+const ManagerScreen = ({stamps, setStamps, employees, processes}) => {
+  const [selDate, setSelDate] = useState(today);
+  const [filterPr, setFilterPr] = useState("");
+  const [editing, setEditing] = useState(null);
+
+  const ds = useMemo(()=>stamps.filter(s=>s.stamp_time.startsWith(selDate)),[stamps,selDate]);
+  const pairs = useMemo(()=>{
+    const r=[]; const g={};
+    ds.forEach(s=>{const k=`${s.employee_id}_${s.process_id}`;if(!g[k])g[k]=[];g[k].push(s);});
+    Object.entries(g).forEach(([k,ss])=>{
+      if(filterPr&&!k.endsWith(filterPr))return;
+      const st=ss.filter(s=>s.stamp_type==="start").sort((a,b)=>new Date(a.stamp_time)-new Date(b.stamp_time));
+      const en=ss.filter(s=>s.stamp_type==="end").sort((a,b)=>new Date(a.stamp_time)-new Date(b.stamp_time));
+      st.forEach((s,i)=>r.push({start:s,end:en[i]||null}));
+    });
+    r.sort((a,b)=>a.start.employee_name.localeCompare(b.start.employee_name)||new Date(a.start.stamp_time)-new Date(b.start.stamp_time));
+    return r;
+  },[ds,filterPr]);
+
+  const alerts = useMemo(()=>pairs.filter(p=>!p.end||p.start.is_modified||p.end?.is_modified),[pairs]);
+  const allConf = pairs.length>0&&pairs.every(p=>p.start.confirmed);
+
+  const confirm1 = (id)=>setStamps(p=>p.map(s=>s.stamp_id===id?{...s,confirmed:true,confirmed_by:"mgr_001",confirmed_at:new Date().toISOString()}:s));
+  const confirmAll = ()=>{const ids=new Set(ds.map(s=>s.stamp_id));setStamps(p=>p.map(s=>ids.has(s.stamp_id)?{...s,confirmed:true,confirmed_by:"mgr_001",confirmed_at:new Date().toISOString()}:s));};
+
+  if (editing) return React.createElement(EditScreen,{stamp:editing,stamps,setStamps,onBack:()=>setEditing(null),processes});
+
+  return React.createElement("div",{className:"screen"},
+    React.createElement("div",{className:"header"},React.createElement("div",{className:"header-title"},"日次確認（管理者）")),
+    React.createElement("div",{className:"section-content"},
+      React.createElement("div",{className:"form-row"},
+        React.createElement("div",{className:"form-group"},React.createElement("span",{className:"form-label"},"日付"),React.createElement("input",{type:"date",value:selDate,onChange:e=>setSelDate(e.target.value)})),
+        React.createElement("div",{className:"form-group"},React.createElement("span",{className:"form-label"},"工程"),
+          React.createElement("select",{value:filterPr,onChange:e=>setFilterPr(e.target.value)},
+            React.createElement("option",{value:""},"すべて"),
+            processes.map(p=>React.createElement("option",{key:p.process_id,value:p.process_id},p.process_name)))),
+        React.createElement("button",{className:"btn btn-green",disabled:allConf,onClick:confirmAll},"全件確認済み")),
+      alerts.length>0&&React.createElement("div",{className:"alert-box"},
+        React.createElement("div",{className:"alert-title"},`要確認: ${alerts.length}件`),
+        alerts.slice(0,5).map((a,i)=>React.createElement("div",{key:i,className:"alert-item"},
+          `${!a.end?"\u26A0":"\uD83D\uDD27"} ${a.start.employee_name} / ${prName(a.start.process_id)} ${!a.end?"- 終了未打刻":"- 修正済み"}`))),
+      React.createElement("table",null,
+        React.createElement("thead",null,React.createElement("tr",null,
+          ["従業員","工程","開始","終了","時間","状態","操作"].map(h=>React.createElement("th",{key:h},h)))),
+        React.createElement("tbody",null,
+          pairs.length===0?React.createElement("tr",null,React.createElement("td",{colSpan:7,style:{textAlign:"center",padding:32,color:"#94a3b8"}},"データがありません"))
+          :pairs.map((p,i)=>{
+            const st=p.start.confirmed?"confirmed":!p.end?"no_end":(p.start.is_modified||p.end?.is_modified)?"modified":"ok";
+            return React.createElement("tr",{key:i},
+              React.createElement("td",{style:{fontWeight:600}},p.start.employee_name),
+              React.createElement("td",null,prName(p.start.process_id)),
+              React.createElement("td",{className:"mono"},fmt(p.start.stamp_time)),
+              React.createElement("td",{className:"mono"},p.end?fmt(p.end.stamp_time):"\u2014"),
+              React.createElement("td",{className:"mono"},p.end?dur(p.start.stamp_time,p.end.stamp_time):"\u2014"),
+              React.createElement("td",null,React.createElement(StatusBadge,{status:st})),
+              React.createElement("td",null,
+                React.createElement("div",{style:{display:"flex",gap:8,justifyContent:"center"}},
+                  !p.start.confirmed&&React.createElement("button",{className:"btn-link",onClick:()=>confirm1(p.start.stamp_id)},"確認"),
+                  React.createElement("button",{className:"btn-link",onClick:()=>setEditing(p.start)},"修正"))));
+          }))))
+  );
+};
+
+// ==================== Settings Screen ====================
+const SettingsScreen = ({processes, employees, currentFactory, setCurrentFactory}) => {
+  const factoryProcesses = processes.filter(p => p.factory_id === currentFactory.factory_id);
+  return React.createElement("div",{className:"screen"},
+    React.createElement("div",{className:"header"},React.createElement("div",{className:"header-title"},"設定")),
+    React.createElement("div",{className:"section-content"},
+      React.createElement("div",{className:"settings-section"},
+        React.createElement("h3",null,"端末設定"),
+        React.createElement("div",{className:"form-group",style:{marginBottom:12}},
+          React.createElement("span",{className:"form-label"},"この端末の工場"),
+          React.createElement("select",{value:currentFactory.factory_id,onChange:e=>setCurrentFactory(FACTORIES.find(f=>f.factory_id===e.target.value)),style:{width:"100%"}},
+            FACTORIES.map(f=>React.createElement("option",{key:f.factory_id,value:f.factory_id},f.factory_name)))),
+        React.createElement("div",{className:"info-box"},
+          React.createElement("div",null,
+            React.createElement("span",{className:"label"},"工場: "),
+            React.createElement("span",{className:"value"},currentFactory.factory_name)),
+          React.createElement("div",{style:{marginTop:4}},
+            React.createElement("span",{className:"label"},"端末ID: "),
+            React.createElement("span",{className:"value"},currentFactory.tablet_id)),
+          React.createElement("div",{style:{marginTop:4}},
+            React.createElement("span",{className:"label"},"読取方式: "),
+            React.createElement("span",{className:"value"},"ICカード（リストバンド型 FeliCa）")),
+          React.createElement("div",{style:{marginTop:4}},
+            React.createElement("span",{className:"label"},"工程数: "),
+            React.createElement("span",{className:"value"},`${factoryProcesses.length} 工程`)))),
+      React.createElement("div",{className:"settings-section"},
+        React.createElement("h3",null,`工程マスタ（${currentFactory.factory_name}）`),
+        React.createElement("table",null,
+          React.createElement("thead",null,React.createElement("tr",null,["#","工程名","工場"].map(h=>React.createElement("th",{key:h},h)))),
+          React.createElement("tbody",null,factoryProcesses.map((p,i)=>React.createElement("tr",{key:p.process_id},
+            React.createElement("td",{className:"mono"},i+1),
+            React.createElement("td",null,p.process_name),
+            React.createElement("td",{style:{fontSize:11,color:"#94a3b8"}},currentFactory.factory_name)))))),
+      React.createElement("div",{className:"settings-section"},
+        React.createElement("h3",null,"従業員マスタ"),
+        React.createElement("table",null,
+          React.createElement("thead",null,React.createElement("tr",null,["従業員名","IDm","ロール"].map(h=>React.createElement("th",{key:h},h)))),
+          React.createElement("tbody",null,employees.map(e=>React.createElement("tr",{key:e.employee_id},
+            React.createElement("td",{style:{fontWeight:600}},e.employee_name),
+            React.createElement("td",{className:"mono",style:{fontSize:11}},e.idm),
+            React.createElement("td",null,React.createElement("span",{className:`role-badge ${e.role}`},e.role==="manager"?"管理者":"作業者"))))))),
+      React.createElement("div",{className:"sys-info"},
+        React.createElement("div",{className:"si-title"},"システム情報"),
+        React.createElement("div",null,"バージョン: 0.2.0 (PoC - ICカード版)"),
+        React.createElement("div",null,"読取: PaSoRi（USB） + Web USB API"),
+        React.createElement("div",null,"GCP: Cloud Functions → BigQuery")))
+  );
+};
+
+// ==================== Main App ====================
+const App = () => {
+  const [stamps, setStamps] = useState(generateMockStamps);
+  const [tab, setTab] = useState("stamp");
+  const [editing, setEditing] = useState(null);
+  const [currentFactory, setCurrentFactory] = useState(FACTORIES[0]);
+
+  const tabs = [{id:"stamp",label:"打刻",icon:"\uD83D\uDCF3"},{id:"history",label:"履歴",icon:"\uD83D\uDCCB"},{id:"manager",label:"管理者",icon:"\uD83D\uDC64"},{id:"settings",label:"設定",icon:"\u2699\uFE0F"}];
+
+  const screen = () => {
+    if (editing && tab==="history") return React.createElement(EditScreen,{stamp:editing,stamps,setStamps,onBack:()=>setEditing(null),processes:MOCK_PROCESSES});
+    switch(tab){
+      case "stamp": return React.createElement(StampScreen,{stamps,setStamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES,currentFactory,setCurrentFactory});
+      case "history": return React.createElement(HistoryScreen,{stamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES,onEdit:s=>setEditing(s)});
+      case "manager": return React.createElement(ManagerScreen,{stamps,setStamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES});
+      case "settings": return React.createElement(SettingsScreen,{processes:MOCK_PROCESSES,employees:MOCK_EMPLOYEES,currentFactory,setCurrentFactory});
+    }
+  };
+
+  return React.createElement("div",{className:"app-shell"},
+    screen(),
+    React.createElement("nav",{className:"bottom-nav"},
+      tabs.map(t=>React.createElement("button",{key:t.id,className:`nav-btn ${tab===t.id?"active":""}`,onClick:()=>{setTab(t.id);setEditing(null);}},
+        React.createElement("span",{className:"icon"},t.icon),t.label)))
+  );
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
