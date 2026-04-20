@@ -142,6 +142,24 @@ tr:hover { background: #f8fafc; }
 .ic-reg-card .ic-status-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: auto; }
 .ic-reg-card .ic-status-tag.registered { background: #dcfce7; color: #15803d; }
 .ic-reg-card .ic-status-tag.unregistered { background: #fef9c3; color: #854d0e; }
+.ic-reg-card .btn-delete { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 18px; padding: 4px 8px; margin-left: 8px; border-radius: 4px; }
+.ic-reg-card .btn-delete:hover { background: #fef2f2; }
+.ic-reg-waiting-box { border: 3px dashed #0ea5e9; border-radius: 16px; padding: 40px 20px; text-align: center; margin-bottom: 20px; background: #f0f9ff; }
+.ic-reg-waiting-box.detected { border-color: #22c55e; background: #f0fdf4; }
+.ic-reg-waiting-box .ic-icon { font-size: 48px; margin-bottom: 12px; }
+.ic-reg-waiting-box .ic-msg { font-size: 16px; font-weight: 600; color: #0369a1; }
+.ic-reg-waiting-box.detected .ic-msg { color: #15803d; }
+.ic-reg-waiting-box .ic-detected-id { font-family: monospace; font-size: 20px; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 8px 16px; border-radius: 8px; display: inline-block; margin: 12px 0; }
+.ic-reg-form { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.ic-reg-form input { font-size: 16px; padding: 10px 14px; border: 2px solid #cbd5e1; border-radius: 8px; outline: none; }
+.ic-reg-form input:focus { border-color: #0ea5e9; }
+.ic-reg-form .btn-row { display: flex; gap: 8px; justify-content: center; }
+.ic-reg-form .btn-register { background: #0ea5e9; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.ic-reg-form .btn-register:disabled { background: #94a3b8; cursor: not-allowed; }
+.ic-reg-form .btn-cancel { background: #f1f5f9; color: #64748b; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+@keyframes icPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+.ic-reg-waiting-box .ic-icon.pulse { animation: icPulse 1.5s ease-in-out infinite; }
+.ic-reg-empty { text-align: center; padding: 24px; color: #94a3b8; font-size: 14px; }
 /* スマホ縦向き */
 .stamp-landscape { display: flex; flex-direction: column; flex: 1; overflow-y: auto; }
 .stamp-landscape .reader-side { display: flex; flex-direction: column; align-items: center; }
@@ -169,14 +187,10 @@ tr:hover { background: #f8fafc; }
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-// ==================== テストユーザー ====================
-const MOCK_EMPLOYEES = [
-  { employee_id: "emp_test_001", employee_name: "テスト １", ic_card_id: "IC-TEST-001", factory_id: "f_001", role: "worker" },
-  { employee_id: "emp_test_002", employee_name: "テスト ２", ic_card_id: "IC-TEST-002", factory_id: "f_001", role: "worker" },
-  { employee_id: "emp_test_003", employee_name: "テスト ３", ic_card_id: "IC-TEST-003", factory_id: "f_001", role: "worker" },
-  { employee_id: "emp_test_004", employee_name: "テスト ４", ic_card_id: "IC-TEST-004", factory_id: "f_001", role: "worker" },
-  { employee_id: "emp_test_005", employee_name: "テスト ５", ic_card_id: "IC-TEST-005", factory_id: "f_001", role: "manager" },
-];
+// ==================== 従業員データ ====================
+const EMPLOYEES_STORAGE_KEY = "taiyo_seland_employees_ic";
+const loadEmployees = () => { try { return JSON.parse(localStorage.getItem(EMPLOYEES_STORAGE_KEY)) || []; } catch(e) { return []; } };
+const saveEmployees = (emps) => { try { localStorage.setItem(EMPLOYEES_STORAGE_KEY, JSON.stringify(emps)); } catch(e) {} };
 
 const FACTORIES = [
   { factory_id: "f_001", factory_name: "望岳台工場", tablet_id: "tablet_001" },
@@ -689,16 +703,97 @@ const ManagerScreen = ({stamps, setStamps, employees, processes}) => {
 };
 
 // ==================== IC Card Registration Screen ====================
-const ICRegScreen = ({employees}) => {
+const ICRegScreen = ({employees, setEmployees, currentFactory}) => {
+  const [regPhase, setRegPhase] = useState("list"); // "list" | "waiting" | "form"
+  const [detectedCardId, setDetectedCardId] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regRole, setRegRole] = useState("worker");
+  const nameInputRef = useRef(null);
+
+  const handleCardDetect = useCallback((cardId) => {
+    const existing = employees.find(e => e.ic_card_id === cardId);
+    if (existing) {
+      alert(`このICカードは既に「${existing.employee_name}」として登録されています。`);
+      return;
+    }
+    setDetectedCardId(cardId);
+    setRegPhase("form");
+    setRegName("");
+    setRegRole("worker");
+    setTimeout(() => { if (nameInputRef.current) nameInputRef.current.focus(); }, 100);
+  }, [employees]);
+
+  const { readerStatus } = useICCardReader(handleCardDetect, regPhase === "waiting");
+
+  const handleRegister = () => {
+    if (!regName.trim() || !detectedCardId) return;
+    const newEmp = {
+      employee_id: `emp_${Date.now()}`,
+      employee_name: regName.trim(),
+      ic_card_id: detectedCardId,
+      factory_id: currentFactory.factory_id,
+      role: regRole
+    };
+    const updated = [...employees, newEmp];
+    setEmployees(updated);
+    setRegPhase("list");
+    setDetectedCardId("");
+    setRegName("");
+  };
+
+  const handleDelete = (empId) => {
+    const emp = employees.find(e => e.employee_id === empId);
+    if (!emp) return;
+    if (!window.confirm(`「${emp.employee_name}」を削除しますか？\nICカードID: ${emp.ic_card_id}`)) return;
+    setEmployees(employees.filter(e => e.employee_id !== empId));
+  };
+
+  const cancelReg = () => { setRegPhase("list"); setDetectedCardId(""); setRegName(""); };
+
   return React.createElement("div", {className:"screen"},
     React.createElement("div", {className:"header"}, React.createElement("div", {className:"header-title"}, "ICカード登録")),
     React.createElement("div", {className:"ic-reg-page"},
-      React.createElement("div", {style:{fontSize:13,color:"#64748b",marginBottom:20}},
-        "従業員に紐づいているICカードIDの一覧です。本番環境ではICカードをかざして新規登録・変更が可能になります。"),
+
+      // Registration area
+      regPhase === "list" && React.createElement("div", {style:{marginBottom:20,textAlign:"center"}},
+        React.createElement("button", {className:"btn", style:{background:"#0ea5e9",color:"#fff",padding:"12px 32px",fontSize:15,fontWeight:600,borderRadius:8,cursor:"pointer",border:"none"},
+          onClick:()=>setRegPhase("waiting")}, "\uD83D\uDCB3 新規ICカード登録")),
+
+      regPhase === "waiting" && React.createElement("div", {className:"ic-reg-waiting-box"},
+        React.createElement("div", {className:"ic-icon pulse"}, "\uD83D\uDCB3"),
+        React.createElement("div", {className:"ic-msg"}, "ICカードをリーダーにかざしてください"),
+        React.createElement("div", {style:{fontSize:12,color:"#94a3b8",marginTop:8}}, "クロノス DRAGON（USB HID）で読み取ります"),
+        React.createElement("div", {style:{marginTop:16}},
+          React.createElement("button", {className:"btn", style:{background:"#f1f5f9",color:"#64748b",border:"none",padding:"8px 20px",borderRadius:8,cursor:"pointer"},
+            onClick:cancelReg}, "キャンセル"))),
+
+      regPhase === "form" && React.createElement("div", {className:"ic-reg-waiting-box detected"},
+        React.createElement("div", {className:"ic-icon"}, "\u2705"),
+        React.createElement("div", {className:"ic-msg"}, "ICカードを検出しました"),
+        React.createElement("div", {className:"ic-detected-id"}, detectedCardId),
+        React.createElement("div", {className:"ic-reg-form"},
+          React.createElement("input", {ref:nameInputRef, type:"text", placeholder:"従業員名を入力", value:regName, onChange:e=>setRegName(e.target.value),
+            onKeyDown:e=>{ if(e.key==="Enter" && regName.trim()) handleRegister(); }}),
+          React.createElement("select", {value:regRole, onChange:e=>setRegRole(e.target.value), style:{fontSize:14,padding:"8px 12px",borderRadius:8,border:"2px solid #cbd5e1"}},
+            React.createElement("option", {value:"worker"}, "作業者"),
+            React.createElement("option", {value:"manager"}, "管理者")),
+          React.createElement("div", {className:"btn-row"},
+            React.createElement("button", {className:"btn-register", onClick:handleRegister, disabled:!regName.trim()}, "登録する"),
+            React.createElement("button", {className:"btn-cancel", onClick:cancelReg}, "キャンセル")))),
+
+      // Employee list
+      React.createElement("div", {style:{fontSize:13,color:"#64748b",marginBottom:12,fontWeight:600}},
+        `登録済み従業員（${employees.length}名）`),
+      employees.length === 0 && React.createElement("div", {className:"ic-reg-empty"}, "登録されている従業員はいません。\n「新規ICカード登録」から従業員を登録してください。"),
       employees.map(emp => React.createElement("div", {key: emp.employee_id, className:"ic-reg-card"},
         React.createElement("div", {className:"ic-name"}, emp.employee_name),
         React.createElement("div", {className:"ic-id"}, emp.ic_card_id),
-        React.createElement("span", {className:`ic-status-tag ${emp.ic_card_id ? "registered" : "unregistered"}`}, emp.ic_card_id ? "\u2713 登録済" : "未登録"))),
+        React.createElement("span", {className:`ic-status-tag registered`}, emp.role === "manager" ? "管理者" : "作業者"),
+        React.createElement("span", {style:{fontSize:11,color:"#94a3b8",marginLeft:4}},
+          FACTORIES.find(f=>f.factory_id===emp.factory_id)?.factory_name || ""),
+        React.createElement("button", {className:"btn-delete", onClick:()=>handleDelete(emp.employee_id), title:"削除"}, "\u00D7"))),
+
+      // Device info
       React.createElement("div", {style:{marginTop:24,padding:16,background:"#f8fafc",borderRadius:8,fontSize:12,color:"#94a3b8"}},
         React.createElement("div", {style:{fontWeight:600,marginBottom:4}}, "ICリーダー情報"),
         React.createElement("div", null, "機種: クロノス DRAGON"),
@@ -733,13 +828,16 @@ const SettingsScreen = ({processes, employees, currentFactory, setCurrentFactory
             React.createElement("td",{className:"mono"},i+1), React.createElement("td",null,p.process_name),
             React.createElement("td",{style:{fontSize:11,color:"#94a3b8"}},currentFactory.factory_name)))))),
       React.createElement("div",{className:"settings-section"},
-        React.createElement("h3",null,"テストユーザー"),
-        React.createElement("table",null,
-          React.createElement("thead",null,React.createElement("tr",null,["従業員名","ICカードID","ロール"].map(h=>React.createElement("th",{key:h},h)))),
+        React.createElement("h3",null,`登録従業員（${employees.length}名）`),
+        employees.length === 0
+          ? React.createElement("div",{style:{color:"#94a3b8",fontSize:13,padding:8}},"従業員が登録されていません。IC登録画面から登録してください。")
+          : React.createElement("table",null,
+          React.createElement("thead",null,React.createElement("tr",null,["従業員名","ICカードID","ロール","工場"].map(h=>React.createElement("th",{key:h},h)))),
           React.createElement("tbody",null,employees.map(e=>React.createElement("tr",{key:e.employee_id},
             React.createElement("td",{style:{fontWeight:600}},e.employee_name),
             React.createElement("td",{className:"mono",style:{fontSize:11}},e.ic_card_id),
-            React.createElement("td",null,React.createElement("span",{className:`role-badge ${e.role}`},e.role==="manager"?"管理者":"作業者"))))))),
+            React.createElement("td",null,React.createElement("span",{className:`role-badge ${e.role}`},e.role==="manager"?"管理者":"作業者")),
+            React.createElement("td",{style:{fontSize:11,color:"#94a3b8"}},FACTORIES.find(f=>f.factory_id===e.factory_id)?.factory_name||"")))))),
       React.createElement("div",{className:"sys-info"},
         React.createElement("div",{className:"si-title"},"システム情報"),
         React.createElement("div",null,"バージョン: 0.4.0 (PoC - ICカード版 + データ永続化)"),
@@ -759,10 +857,12 @@ const SettingsScreen = ({processes, employees, currentFactory, setCurrentFactory
 // ==================== Main App ====================
 const App = () => {
   const [stamps, setStamps] = useState(() => loadStamps());
+  const [employees, setEmployees] = useState(() => loadEmployees());
   const [tab, setTab] = useState("stamp");
   const [editing, setEditing] = useState(null);
   const [currentFactory, setCurrentFactory] = useState(() => loadFactory());
   useEffect(() => { saveStamps(stamps); }, [stamps]);
+  useEffect(() => { saveEmployees(employees); }, [employees]);
   useEffect(() => { saveFactory(currentFactory); }, [currentFactory]);
 
   const tabs = [
@@ -776,11 +876,11 @@ const App = () => {
   const screen = () => {
     if (editing && tab==="history") return React.createElement(EditScreen,{stamp:editing,stamps,setStamps,onBack:()=>setEditing(null),processes:MOCK_PROCESSES});
     switch(tab){
-      case "stamp": return React.createElement(StampScreen,{stamps,setStamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES,currentFactory,setCurrentFactory});
-      case "history": return React.createElement(HistoryScreen,{stamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES,onEdit:s=>setEditing(s)});
-      case "manager": return React.createElement(ManagerScreen,{stamps,setStamps,employees:MOCK_EMPLOYEES,processes:MOCK_PROCESSES});
-      case "icreg": return React.createElement(ICRegScreen,{employees:MOCK_EMPLOYEES});
-      case "settings": return React.createElement(SettingsScreen,{processes:MOCK_PROCESSES,employees:MOCK_EMPLOYEES,currentFactory,setCurrentFactory,stamps,setStamps});
+      case "stamp": return React.createElement(StampScreen,{stamps,setStamps,employees,processes:MOCK_PROCESSES,currentFactory,setCurrentFactory});
+      case "history": return React.createElement(HistoryScreen,{stamps,employees,processes:MOCK_PROCESSES,onEdit:s=>setEditing(s)});
+      case "manager": return React.createElement(ManagerScreen,{stamps,setStamps,employees,processes:MOCK_PROCESSES});
+      case "icreg": return React.createElement(ICRegScreen,{employees,setEmployees,currentFactory});
+      case "settings": return React.createElement(SettingsScreen,{processes:MOCK_PROCESSES,employees,currentFactory,setCurrentFactory,stamps,setStamps});
     }
   };
 
