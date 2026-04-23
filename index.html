@@ -313,56 +313,110 @@ const StatusBadge = ({status}) => {
 };
 
 // ==================== IC Card Reader Hook (Keyboard Wedge) ====================
-// クロノス DRAGON はUSB HIDキーボードウェッジモードで動作。
-// カードタッチ → カードIDが高速キーストロークで送信 → Enterで確定。
-// 人間のタイピングとの区別: 80ms以内の連続入力をカード読取と判定。
+// JISSO HF-09 はUSB HIDキーボードウェッジモードで動作。
+// カードタッチ → カードIDが高速キーストロークで送信 → Enter/Tabで確定。
+// 人間のタイピングとの区別: 200ms以内の連続入力をカード読取と判定。
+// IME対応: compositionstart中はスキップ、composition確定後もバッファ処理。
 const useICCardReader = (onDetect, enabled) => {
   const [readerStatus, setReaderStatus] = useState("ready");
+  const [lastDetected, setLastDetected] = useState("");
   const bufferRef = useRef("");
   const timerRef = useRef(null);
+  const lastKeyTimeRef = useRef(0);
   const onDetectRef = useRef(onDetect);
   const enabledRef = useRef(enabled);
   const cooldownRef = useRef(false);
+  const composingRef = useRef(false);
 
   useEffect(() => { onDetectRef.current = onDetect; }, [onDetect]);
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
   useEffect(() => {
     if (!enabled) return;
-    const KEYSTROKE_THRESHOLD = 80;
+    // 閾値を200msに緩和（Windows USB HIDドライバのオーバーヘッド対応）
+    const KEYSTROKE_THRESHOLD = 200;
+
+    const processCardId = (raw) => {
+      const cardId = raw.trim();
+      console.log(`[ICReader] バッファ確定: "${cardId}" (${cardId.length}文字)`);
+      if (cardId.length >= 3) {
+        console.log(`[ICReader] ✅ カードID検出: ${cardId}`);
+        setReaderStatus("reading");
+        setLastDetected(cardId);
+        cooldownRef.current = true;
+        if (onDetectRef.current) onDetectRef.current(cardId);
+        setTimeout(() => { cooldownRef.current = false; setReaderStatus("ready"); }, 2000);
+      } else {
+        console.log(`[ICReader] ⚠ 文字数不足（${cardId.length}文字）、スキップ`);
+      }
+      bufferRef.current = "";
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    };
+
+    const handleCompositionStart = () => { composingRef.current = true; };
+    const handleCompositionEnd = () => { composingRef.current = false; };
 
     const handleKeyDown = (e) => {
       if (!enabledRef.current || cooldownRef.current) return;
+      // IME変換中はスキップ
+      if (composingRef.current || e.isComposing) return;
       // フォーム入力中はスキップ
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
-      if (e.key === "Enter") {
+      const now = Date.now();
+      const elapsed = now - lastKeyTimeRef.current;
+
+      // Enter / Tab / 改行 → 確定キー
+      if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        const cardId = bufferRef.current.trim();
-        if (cardId.length >= 3) {
-          setReaderStatus("reading");
-          cooldownRef.current = true;
-          if (onDetectRef.current) onDetectRef.current(cardId);
-          setTimeout(() => { cooldownRef.current = false; setReaderStatus("ready"); }, 2000);
-        }
-        bufferRef.current = "";
-        if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+        console.log(`[ICReader] 確定キー: ${e.key}, バッファ: "${bufferRef.current}"`);
+        processCardId(bufferRef.current);
+        lastKeyTimeRef.current = 0;
         return;
       }
+
       if (e.key.length === 1) {
         e.preventDefault();
+        // 前回キーから時間が空きすぎたらバッファリセット
+        if (bufferRef.current.length > 0 && elapsed > KEYSTROKE_THRESHOLD) {
+          console.log(`[ICReader] タイムアウト(${elapsed}ms)、バッファクリア: "${bufferRef.current}"`);
+          bufferRef.current = "";
+        }
         bufferRef.current += e.key;
+        lastKeyTimeRef.current = now;
+        console.log(`[ICReader] キー入力: "${e.key}" → バッファ: "${bufferRef.current}" (間隔: ${elapsed}ms)`);
+
+        // タイムアウトでバッファクリア
         if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => { bufferRef.current = ""; timerRef.current = null; }, KEYSTROKE_THRESHOLD);
+        timerRef.current = setTimeout(() => {
+          // タイムアウト時にバッファに3文字以上あれば自動確定（Enter無し対策）
+          if (bufferRef.current.length >= 3) {
+            console.log(`[ICReader] タイムアウト自動確定: "${bufferRef.current}"`);
+            processCardId(bufferRef.current);
+          } else {
+            console.log(`[ICReader] タイムアウト、バッファクリア: "${bufferRef.current}"`);
+            bufferRef.current = "";
+          }
+          timerRef.current = null;
+        }, KEYSTROKE_THRESHOLD * 3); // 600msでタイムアウト自動確定
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => { document.removeEventListener("keydown", handleKeyDown); if (timerRef.current) clearTimeout(timerRef.current); };
+    document.addEventListener("compositionstart", handleCompositionStart);
+    document.addEventListener("compositionend", handleCompositionEnd);
+    console.log("[ICReader] 🟢 ICカードリーダー待受開始");
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("compositionstart", handleCompositionStart);
+      document.removeEventListener("compositionend", handleCompositionEnd);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      console.log("[ICReader] 🔴 ICカードリーダー待受停止");
+    };
   }, [enabled]);
 
-  return { readerStatus };
+  return { readerStatus, lastDetected };
 };
 
 // ==================== Stamp Screen (IC Card) ====================
@@ -434,9 +488,9 @@ const StampScreen = ({stamps, setStamps, employees, processes, currentFactory, s
       React.createElement("div", {className:"pulse-ring"}), React.createElement("div", {className:"pulse-ring"}), React.createElement("div", {className:"pulse-ring"}),
       React.createElement("div", {className:"ic-svg"}, "\uD83D\uDCB3")),
     React.createElement("div", {className:"ic-reader-label"}, "ICカードをリーダーにかざしてください"),
-    React.createElement("div", {className:"ic-reader-sub"}, "クロノス DRAGON リーダーにカードをタッチ"),
+    React.createElement("div", {className:"ic-reader-sub"}, "JISSO HF-09 リーダーにカードをタッチ"),
     React.createElement("div", {className:`ic-reader-status ${readerStatus}`}, readerStatus === "ready" ? "\u2713 読取待機中" : "\u26A1 読取中..."),
-    React.createElement("div", {className:"ic-reader-device"}, "ICリーダー: クロノス DRAGON（USB HID）"));
+    React.createElement("div", {className:"ic-reader-device"}, "ICリーダー: JISSO HF-09（USB HID）"));
 
   const renderProcessSelect = () => {
     const currentProc = getCurrentProcess(currentEmp.employee_id);
@@ -762,7 +816,7 @@ const ICRegScreen = ({employees, setEmployees, currentFactory}) => {
       regPhase === "waiting" && React.createElement("div", {className:"ic-reg-waiting-box"},
         React.createElement("div", {className:"ic-icon pulse"}, "\uD83D\uDCB3"),
         React.createElement("div", {className:"ic-msg"}, "ICカードをリーダーにかざしてください"),
-        React.createElement("div", {style:{fontSize:12,color:"#94a3b8",marginTop:8}}, "クロノス DRAGON（USB HID）で読み取ります"),
+        React.createElement("div", {style:{fontSize:12,color:"#94a3b8",marginTop:8}}, "JISSO HF-09（USB HID）で読み取ります"),
         React.createElement("div", {style:{marginTop:16}},
           React.createElement("button", {className:"btn", style:{background:"#f1f5f9",color:"#64748b",border:"none",padding:"8px 20px",borderRadius:8,cursor:"pointer"},
             onClick:cancelReg}, "キャンセル"))),
@@ -796,9 +850,9 @@ const ICRegScreen = ({employees, setEmployees, currentFactory}) => {
       // Device info
       React.createElement("div", {style:{marginTop:24,padding:16,background:"#f8fafc",borderRadius:8,fontSize:12,color:"#94a3b8"}},
         React.createElement("div", {style:{fontWeight:600,marginBottom:4}}, "ICリーダー情報"),
-        React.createElement("div", null, "機種: クロノス DRAGON"),
+        React.createElement("div", null, "機種: JISSO HF-09"),
         React.createElement("div", null, "接続: USB HID（キーボードウェッジモード）"),
-        React.createElement("div", null, "対応カード: FeliCa / MIFARE"),
+        React.createElement("div", null, "対応カード: MIFARE Classic 1K / Ultralight"),
         React.createElement("div", null, "動作: カードタッチ → カードIDをキーボード入力として送信 → Enterキーで確定")))
   );
 };
@@ -818,7 +872,7 @@ const SettingsScreen = ({processes, employees, currentFactory, setCurrentFactory
         React.createElement("div",{className:"info-box"},
           React.createElement("div",null,React.createElement("span",{className:"label"},"工場: "),React.createElement("span",{className:"value"},currentFactory.factory_name)),
           React.createElement("div",{style:{marginTop:4}},React.createElement("span",{className:"label"},"端末ID: "),React.createElement("span",{className:"value"},currentFactory.tablet_id)),
-          React.createElement("div",{style:{marginTop:4}},React.createElement("span",{className:"label"},"読取方式: "),React.createElement("span",{className:"value"},"ICカード（クロノス DRAGON USB HID）")),
+          React.createElement("div",{style:{marginTop:4}},React.createElement("span",{className:"label"},"読取方式: "),React.createElement("span",{className:"value"},"ICカード（JISSO HF-09 USB HID）")),
           React.createElement("div",{style:{marginTop:4}},React.createElement("span",{className:"label"},"工程数: "),React.createElement("span",{className:"value"},`${factoryProcesses.length} 工程`)))),
       React.createElement("div",{className:"settings-section"},
         React.createElement("h3",null,`工程マスタ（${currentFactory.factory_name}）`),
@@ -841,7 +895,7 @@ const SettingsScreen = ({processes, employees, currentFactory, setCurrentFactory
       React.createElement("div",{className:"sys-info"},
         React.createElement("div",{className:"si-title"},"システム情報"),
         React.createElement("div",null,"バージョン: 0.4.0 (PoC - ICカード版 + データ永続化)"),
-        React.createElement("div",null,"読取: クロノス DRAGON（USB HID キーボードウェッジ）"),
+        React.createElement("div",null,"読取: JISSO HF-09（USB HID キーボードウェッジ）"),
         React.createElement("div",null,"データ保存: localStorage（端末内に保存・ページ更新OK）"),
         React.createElement("div",null,"CSV出力: 管理者画面から日別 or 全件出力可能"),
         React.createElement("div",{style:{marginTop:8}}, `蓄積データ: ${stamps.length}件`)),
